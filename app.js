@@ -83,13 +83,17 @@ async function getJobs(force){if(!S.jobs||force)S.jobs=await api('jobs.list');re
 // ================= Login / Shell =================
 function logout(){S.token='';S.user=null;S.jobs=null;store.clear();loginView();}
 function loginView(){
+
   const id=h('input',{placeholder:'User ID',autocomplete:'username'}),pw=h('input',{type:'password',placeholder:'Password',autocomplete:'current-password'});
+
   const b=h('button',{class:'btn',onclick:()=>busy(b,async()=>{
     const r=await api('login',{user_id:id.value,password:pw.value});
     S.token=r.token;S.user=r.user;store.setItem('tk',r.token);store.setItem('us',JSON.stringify(r.user));go(homePage());
   })},'เข้าสู่ระบบ');
   pw.addEventListener('keydown',e=>{if(e.key==='Enter')b.click();});
-  mount(h('div',{class:'login'},h('h2',{},'Factory Tracker'),id,pw,b));
+  const box=h('div',{class:'login'},h('h2',{},'Factory Tracker'));
+  box.append(id,pw,b);
+  mount(box);
 }
 const PAGES={calendar:['ปฏิทิน',calendarPage],daytime:['Daytime Record',daytimePage],rawmat:['Raw Mat Record',rawMatPage],rcy:['RCY Record',rcyPage],report:['Report',reportPage],setting:['Setting',settingPage]};
 const canPage=k=>k==='setting'?can('Admin','Engineer'):true;
