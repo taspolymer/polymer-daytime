@@ -345,33 +345,68 @@ async function manualPage(m){
 
 // ================= Report (ตาราง) =================
 async function reportPage(m){
-  const jobs=await getJobs(),u=a=>[...new Set(a.filter(Boolean))].sort();
-  const F={from:addD(todayStr(),-30),to:todayStr(),line:'',machine:'',job_name:'',status:'',abnormal:''},out=h('div');
+  const jobs=await getJobs();
+  const uniq=a=>[...new Set(a.filter(Boolean))].sort();
+  const opt=arr=>[['','ทั้งหมด']].concat(arr.map(x=>[x,x]));
+  const F={from:addD(todayStr(),-30),to:todayStr(),line:'',machine:'',job_name:'',status:'',abnormal:''};
+  const out=h('div');
   let rows=[];
-  const opt=arr=>[['','ทั้งหมด'],...arr.map(x=>[x,x])];
   const mk=(lab,el)=>h('div',{},h('div',{class:'muted'},lab),el);
-  const bar=h('div',{class:'filters'},
-    mk('จากวันที่',h('input',{type:'date',value:F.from,onchange:e=>F.from=e.target.value})),
-    mk('ถึงวันที่',h('input',{type:'date',value:F.to,onchange:e=>F.to=e.target.value})),
-    mk('Line',sel(opt(u(jobs.map(j=>j.line))),'',v=>F.line=v)),
-    mk('Machine',sel(opt(u(jobs.map(j=>j.machine))),'',v=>F.machine=v)),
-    mk('Job name',sel(opt(u(jobs.map(j=>j.job_name))),'',v=>F.job_name=v)),
-    mk('สถานะ',sel([['','ทั้งหมด'],['PENDING','รอตรวจ'],['APPROVED','อนุมัติ'],['REJECTED','ส่งกลับ']],'',v=>F.status=v)),
-    mk('ความผิดปกติ',sel([['','ทั้งหมด'],['1','เฉพาะผิดปกติ']],'',v=>F.abnormal=v)));
-  const draw=()=>out.replaceChildren(
-    h('div',{class:'tw'},h('table',{class:'tb'},
-      h('thead',{},h('tr',{},['วันที่','Line','Machine','งาน','ผู้บันทึก','สถานะ','หมายเหตุ'].map(t=>h('th',{},t)))),
-      h('tbody',{},rows.map(r=>h('tr',{class:'click',onclick:()=>recordDetail(r.record_id,load)},
-        h('td',{},thD(r.date)),h('td',{},r.line),h('td',{},r.machine),h('td',{},r.job_name),h('td',{},r.operator),
-        h('td',{},h('span',{class:'tag '+(r.review_status==='APPROVED'?'ok':r.review_status==='REJECTED'?'bad':'warn')},STATUS_TH[r.review_status]||r.review_status)),
-        h('td',{},r.abnormal?h('span',{class:'tag bad'},'ผิดปกติ'):null,r.early?h('span',{class:'tag warn'},'ก่อนกำหนด'):null,' '+(r.comment||'')))))),
-    rows.length?null:h('p',{class:'muted'},'ไม่พบข้อมูล'));
-  async function load(){out.replaceChildren(h('p',{},'กำลังโหลด...'));rows=await api('report.list',F);draw();}
+
+  const lineOpts=opt(uniq(jobs.map(j=>j.line)));
+  const machineOpts=opt(uniq(jobs.map(j=>j.machine)));
+  const nameOpts=opt(uniq(jobs.map(j=>j.job_name)));
+  const statusOpts=[['','ทั้งหมด'],['PENDING','รอตรวจ'],['APPROVED','อนุมัติ'],['REJECTED','ส่งกลับ']];
+  const abnOpts=[['','ทั้งหมด'],['1','เฉพาะผิดปกติ']];
+
+  const bar=h('div',{class:'filters'});
+  bar.append(mk('จากวันที่',h('input',{type:'date',value:F.from,onchange:e=>{F.from=e.target.value;}})));
+  bar.append(mk('ถึงวันที่',h('input',{type:'date',value:F.to,onchange:e=>{F.to=e.target.value;}})));
+  bar.append(mk('Line',sel(lineOpts,'',v=>{F.line=v;})));
+  bar.append(mk('Machine',sel(machineOpts,'',v=>{F.machine=v;})));
+  bar.append(mk('Job name',sel(nameOpts,'',v=>{F.job_name=v;})));
+  bar.append(mk('สถานะ',sel(statusOpts,'',v=>{F.status=v;})));
+  bar.append(mk('ความผิดปกติ',sel(abnOpts,'',v=>{F.abnormal=v;})));
+
+  function draw(){
+    const tbody=h('tbody',{});
+    rows.forEach(r=>{
+      const cls=r.review_status==='APPROVED'?'ok':(r.review_status==='REJECTED'?'bad':'warn');
+      const notes=h('td',{});
+      if(r.abnormal)notes.append(h('span',{class:'tag bad'},'ผิดปกติ'));
+      if(r.early)notes.append(h('span',{class:'tag warn'},'ก่อนกำหนด'));
+      notes.append(' '+(r.comment||''));
+      const tr=h('tr',{class:'click',onclick:()=>recordDetail(r.record_id,load)});
+      tr.append(
+        h('td',{},thD(r.date)),
+        h('td',{},r.line),
+        h('td',{},r.machine),
+        h('td',{},r.job_name),
+        h('td',{},r.operator),
+        h('td',{},h('span',{class:'tag '+cls},STATUS_TH[r.review_status]||r.review_status)),
+        notes
+      );
+      tbody.append(tr);
+    });
+    const headRow=h('tr',{});
+    ['วันที่','Line','Machine','งาน','ผู้บันทึก','สถานะ','หมายเหตุ'].forEach(t=>headRow.append(h('th',{},t)));
+    const table=h('table',{class:'tb'});
+    table.append(h('thead',{},headRow),tbody);
+    out.replaceChildren(h('div',{class:'tw'},table),rows.length?null:h('p',{class:'muted'},'ไม่พบข้อมูล'));
+  }
+  async function load(){
+    out.replaceChildren(h('p',{},'กำลังโหลด...'));
+    rows=await api('report.list',F);
+    draw();
+  }
   const go1=h('button',{class:'btn',onclick:()=>busy(go1,load)},'ค้นหา');
   const csvB=h('button',{class:'btn sec',onclick:()=>csv(rows)},'Export CSV');
-  m.replaceChildren(h('h3',{},'Report'),bar,h('div',{class:'ma',style:'justify-content:flex-start;margin-bottom:10px'},go1,csvB),out);
+  const btns=h('div',{class:'ma',style:'justify-content:flex-start;margin-bottom:10px'});
+  btns.append(go1,csvB);
+  m.replaceChildren(h('h3',{},'Report'),bar,btns,out);
   await load();
 }
+
 function csv(rows){
   const cols=[['date','วันที่'],['line','Line'],['machine','Machine'],['job_name','งาน'],['operator','ผู้บันทึก'],['review_status','สถานะ'],['abnormal','ผิดปกติ'],['comment','Comment']];
   const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
@@ -380,28 +415,57 @@ function csv(rows){
   const t='\ufeff'+lines.map(r=>r.map(esc).join(',')).join('\n');
   h('a',{href:URL.createObjectURL(new Blob([t],{type:'text/csv'})),download:'report.csv'}).click();
 }
+
 async function recordDetail(id,reload){
-  const d=await api('report.detail',{record_id:id}),r=d.record;
+  const d=await api('report.detail',{record_id:id});
+  const r=d.record;
+  const canReview=r.review_status==='PENDING'&&can(...REVIEWERS);
   const rc=h('textarea',{placeholder:'Comment ผู้ตรวจ (จำเป็นเมื่อส่งกลับ)'});
-  const imgs=h('div',{class:'imgs'},d.photos.map(p=>{const i=h('img',{alt:p.label});loadPhoto(p.id,i);return h('div',{},h('div',{class:'muted'},p.label),i);}));
-  const body=h('div',{},
-    h('p',{},h('b',{},d.job.line+' · '+d.job.machine+' · '+d.job.job_name)),
-    h('p',{class:'muted'},thD(r.date)+' · '+r.operator),
-    r.abnormal?h('p',{class:'warn'},'⚠ พบความผิดปกติ'):null,
-    r.early_reason?h('p',{class:'warn'},'ทำก่อนกำหนด: '+r.early_reason):null,
-    d.values.length?h('table',{class:'tb'},d.values.map(v=>h('tr',{},h('td',{},v.label),
-      h('td',{},v.type==='checkbox'?(v.value==='true'?'✔':'✘'):v.value+(v.unit?' '+v.unit:''))))):null,
-    h('p',{},'Comment: '+(r.comment||'-')),
-    imgs,
-    r.review_status!=='PENDING'?h('p',{class:'muted'},(STATUS_TH[r.review_status]||'')+' โดย '+r.reviewer+(r.review_comment?' : '+r.review_comment:'')):null,
-    r.review_status==='PENDING'&&can(...REVIEWERS)?h('div',{class:'fg'},rc):null);
-  modal('รายละเอียด Report',body,c=>{
-    if(r.review_status!=='PENDING'||!can(...REVIEWERS))return[];
-    const f=dec=>e=>busy(e.target,async()=>{
-      await api('report.review',{record_id:id,decision:dec,comment:rc.value});
-      toast('บันทึกผลตรวจแล้ว');c();reload();
+  const body=h('div',{});
+
+  body.append(h('p',{},h('b',{},d.job.line+' · '+d.job.machine+' · '+d.job.job_name)));
+  body.append(h('p',{class:'muted'},thD(r.date)+' · '+r.operator));
+  if(r.abnormal)body.append(h('p',{class:'warn'},'⚠ พบความผิดปกติ'));
+  if(r.early_reason)body.append(h('p',{class:'warn'},'ทำก่อนกำหนด: '+r.early_reason));
+
+  if(d.values.length){
+    const tb=h('table',{class:'tb'});
+    d.values.forEach(v=>{
+      const val=v.type==='checkbox'?(v.value==='true'?'✔':'✘'):(v.value+(v.unit?' '+v.unit:''));
+      tb.append(h('tr',{},h('td',{},v.label),h('td',{},val)));
     });
-    return[h('button',{class:'btn bad',onclick:f('REJECTED')},'ส่งกลับแก้ไข'),h('button',{class:'btn ok',onclick:f('APPROVED')},'อนุมัติ')];
+    body.append(tb);
+  }
+  body.append(h('p',{},'Comment: '+(r.comment||'-')));
+
+  const imgs=h('div',{class:'imgs'});
+  d.photos.forEach(p=>{
+    const img=h('img',{alt:p.label});
+    loadPhoto(p.id,img);
+    const cell=h('div',{});
+    cell.append(h('div',{class:'muted'},p.label),img);
+    imgs.append(cell);
+  });
+  body.append(imgs);
+
+  if(r.review_status!=='PENDING'){
+    const who=(STATUS_TH[r.review_status]||'')+' โดย '+r.reviewer+(r.review_comment?' : '+r.review_comment:'');
+    body.append(h('p',{class:'muted'},who));
+  }
+  if(canReview)body.append(h('div',{class:'fg'},rc));
+
+  modal('รายละเอียด Report',body,c=>{
+    if(!canReview)return[];
+    const decide=dec=>e=>busy(e.target,async()=>{
+      await api('report.review',{record_id:id,decision:dec,comment:rc.value});
+      toast('บันทึกผลตรวจแล้ว');
+      c();
+      reload();
+    });
+    return[
+      h('button',{class:'btn bad',onclick:decide('REJECTED')},'ส่งกลับแก้ไข'),
+      h('button',{class:'btn ok',onclick:decide('APPROVED')},'อนุมัติ')
+    ];
   });
 }
 
