@@ -283,10 +283,21 @@ async function reportPage(m){
   m.replaceChildren(h('h3',{},'Report'),bar,h('div',{class:'ma',style:'justify-content:flex-start;margin-bottom:10px'},go1,csvB),out);
   await load();
 }
-function csv(rows){const cols=[['date','วันที่'],['line','Line'],['machine','Machine'],['job_name','งาน'],['operator','ผู้บันทึก'],['review_status','สถานะ'],['abnormal','ผิดปกติ'],['comment','Comment']];
+function csv(rows){
+
+  const cols=[['date','วันที่'],['line','Line'],['machine','Machine'],['job_name','งาน'],['operator','ผู้บันทึก'],['review_status','สถานะ'],['abnormal','ผิดปกติ'],['comment','Comment']];
+
   const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-  const t='\ufeff'+[cols.map(c=>c[1]),...rows.map(r=>cols.map(r=>cols.map(c=>r[c[0]]))].map(r=>r.map(esc).join(',')).join('\n');
-  h('a',{href:URL.createObjectURL(new Blob([t],{type:'text/csv'})),download:'report.csv'}).click();}
+
+  const lines=[cols.map(c=>c[1])];
+
+  rows.forEach(r=>lines.push(cols.map(c=>r[c[0]])));
+
+  const t='\ufeff'+lines.map(r=>r.map(esc).join(',')).join('\n');
+
+  h('a',{href:URL.createObjectURL(new Blob([t],{type:'text/csv'})),download:'report.csv'}).click();
+
+}
 async function recordDetail(id,reload){
   const d=await api('report.detail',{record_id:id}),r=d.record,rc=h('textarea',{placeholder:'Comment ผู้ตรวจ (จำเป็นเมื่อส่งกลับ)'});
   const imgs=h('div',{class:'imgs'},d.photos.map(p=>{const i=h('img',{alt:p.label});loadPhoto(p.id,i);return h('div',{},h('div',{class:'muted'},p.label),i);}));
