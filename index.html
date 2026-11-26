@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Tracker</title>
+<link rel="stylesheet" href="style.css?v=1">
+<script>
+window.addEventListener('error', function (ev) {
+  var box = document.getElementById('errbox');
+  if (!box) return;
+  box.style.display = 'block';
+  box.textContent += 'ERROR: ' + ev.message + ' (' + String(ev.filename || '').split('/').pop() + ':' + ev.lineno + ')\n';
+});
+window.addEventListener('unhandledrejection', function (ev) {
+  var box = document.getElementById('errbox');
+  if (!box) return;
+  box.style.display = 'block';
+  box.textContent += 'ERROR: ' + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason) + '\n';
+});
+</script>
+</head>
+<body>
+<pre id="errbox"></pre>
+<div id="app"><p class="boot">กำลังโหลด...</p></div>
+<script src="config.js?v=1"></script>
+<script src="core.js?v=1"></script>
+<script src="page-calendar.js?v=1"></script>
+<script src="page-daytime.js?v=1"></script>
+<script src="page-material.js?v=1"></script>
+<script src="page-report.js?v=1"></script>
+<script src="page-setting.js?v=1"></script>
+<script>
+if (window.startApp) { startApp(); }
+else { document.getElementById('app').innerHTML = '<p class="boot">โหลด core.js ไม่สำเร็จ (ดูข้อความสีแดงด้านบน)</p>'; }
+</script>
+</body>
+</html>
