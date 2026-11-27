@@ -118,39 +118,153 @@ function openDtForm(main, job, ctx) {
   };
 }
 
+var MN = { line: '', machine: '', id: '' };
+
 function renderManual(main) {
   resetHandlers(main);
+  MN = { line: '', machine: '', id: '' };
   return api('daytime.manualJobs').then(function (list) {
     var map = {};
-    var opts = [['', '-- เลือกงาน --']];
-    list.forEach(function (x) {
-      map[x.job.job_id] = x;
-      opts.push([x.job.job_id, jobLabel(x.job) + (x.job.frequency_type === 'NONE' ? ' (รายครั้ง)' : '')]);
-    });
-    main.innerHTML = '<div class="bar"><button type="button" class="btn sec" data-act="back">◀ กลับ</button><b>เพิ่มงาน Manual</b></div>'
-      + '<div class="fg"><label>เลือกงาน</label><select id="mn-job">' + optHtml(opts, '') + '</select></div><div id="mn-info"></div>';
-    bindClick(main, {
-      back: function () { return renderDtList(main); },
-      next: function () {
-        var cur = map[$('mn-job').value];
-        if (cur) openDtForm(main, cur.job, { manual: true, ref: cur.due });
+    list.forEach(function (x) { map[x.job.job_id] = x; });
+    var lines = uniq(list.map(function (x) { return x.job.line; }));
+
+    function machinesOf(line) {
+      return uniq(list.filter(function (x) { return x.job.line === line; }).map(function (x) { return x.job.machine; }));
+    }
+    function subseq(text, q) {
+      var j = 0;
+      for (var i = 0; i < text.length && j < q.length; i++) {
+        if (text.charAt(i) === q.charAt(j)) j++;
       }
-    });
-    main.onchange = function (e) {
-      if (e.target.id !== 'mn-job') return;
-      var cur = map[e.target.value];
+      return j === q.length;
+    }
+    function score(x, q) {
+      if (!q) return 1;
+      var name = String(x.job.job_name || '').toLowerCase();
+      var detail = String(x.job.job_detail || '').toLowerCase();
+      var mc = String(x.job.machine || '').toLowerCase();
+      if (name === q) return 100;
+      if (name.indexOf(q) === 0) return 90;
+      if (name.indexOf(q) >= 0) return 80;
+      var all = name + ' ' + detail + ' ' + mc;
+      var toks = q.split(/\s+/).filter(function (t) { return t; });
+      var hit = 0;
+      toks.forEach(function (t) { if (all.indexOf(t) >= 0) hit++; });
+      if (toks.length && hit === toks.length) return 60;
+      if (detail.indexOf(q) >= 0) return 50;
+      if (hit > 0) return 30 + hit;
+      if (q.length >= 2 && subseq(name, q)) return 20;
+      return 0;
+    }
+    function ready() { return !!MN.line && !!MN.machine; }
+
+    main.innerHTML = '<div class="bar"><button type="button" class="btn sec" data-act="back">◀ กลับ</button><b>เพิ่มงาน Manual</b></div>'
+      + '<div class="row2">'
+      + '<div class="fg"><label>1. เลือก Line</label><select id="mn-line">' + optHtml([['', '-- เลือก Line --']].concat(lines.map(function (l) { return [l, l]; })), '') + '</select></div>'
+      + '<div class="fg"><label>2. เลือกเครื่องจักร</label><select id="mn-machine" disabled></select></div>'
+      + '</div>'
+      + '<div class="fg"><label>3. พิมพ์ค้นหางาน</label><input id="mn-q" type="text" autocomplete="off" disabled></div>'
+      + '<div id="mn-sug"></div><div id="mn-info"></div>';
+
+    function drawMachine() {
+      var sel = $('mn-machine');
+      if (!MN.line) {
+        sel.innerHTML = optHtml([['', '-- เลือก Line ก่อน --']], '');
+        sel.disabled = true;
+        return;
+      }
+      var opts = [['', '-- เลือกเครื่องจักร --'], ['*', 'ทุกเครื่องจักร']];
+      machinesOf(MN.line).forEach(function (m) { opts.push([m, m]); });
+      sel.innerHTML = optHtml(opts, MN.machine);
+      sel.disabled = false;
+    }
+    function drawInfo() {
       var box = $('mn-info');
+      var cur = map[MN.id];
       if (!cur) { box.innerHTML = ''; return; }
       var per = cur.job.frequency_type === 'NONE';
       var today = todayStr();
-      var h = '<div class="card"><div>ทำล่าสุด: ' + (cur.last_done ? esc(thD(cur.last_done)) + ' (ผ่านมา ' + dayDiff(today, cur.last_done) + ' วัน)' : 'ยังไม่เคยบันทึก') + '</div>';
-      if (per) h += '<div class="note">งานรายครั้ง: ไม่มีรอบและ Lifetime ต้องระบุรายละเอียดงานครั้งนี้ในช่อง Comment</div>';
-      else {
+      var h = '<div class="card"><p><b>' + esc(jobLabel(cur.job)) + '</b></p>';
+      if (cur.job.job_detail) h += '<p class="muted">' + esc(cur.job.job_detail) + '</p>';
+      h += '<div>ทำล่าสุด: ' + (cur.last_done ? esc(thD(cur.last_done)) + ' (ผ่านมา ' + dayDiff(today, cur.last_done) + ' วัน)' : 'ยังไม่เคยบันทึก') + '</div>';
+      if (per) {
+        h += '<div class="note">งานรายครั้ง: ไม่มีรอบและ Lifetime ต้องระบุรายละเอียดงานครั้งนี้ในช่อง Comment</div>';
+      } else {
         h += '<div>ครบกำหนดถัดไป: ' + esc(thD(cur.due)) + ' · Lifetime ' + (cur.job.lifetime_days ? cur.job.lifetime_days + ' วัน' : '-') + '</div>';
         if (today < cur.due) h += '<div class="warn">⚠ ยังไม่ถึงกำหนด จะต้องระบุเหตุผลที่ทำก่อน</div>';
       }
       h += '<div class="ma"><button type="button" class="btn" data-act="next">ถัดไป ▶</button></div></div>';
       box.innerHTML = h;
+    }
+    function drawSug() {
+      var box = $('mn-sug');
+      if (!ready() || MN.id) { box.innerHTML = ''; return; }
+      var q = $('mn-q').value.trim().toLowerCase();
+      var items = list.filter(function (x) {
+        return x.job.line === MN.line && (MN.machine === '*' || x.job.machine === MN.machine);
+      }).map(function (x) { return { x: x, s: score(x, q) }; })
+        .filter(function (r) { return r.s > 0; })
+        .sort(function (a, b) { return b.s - a.s || String(a.x.job.job_name).localeCompare(String(b.x.job.job_name)); });
+      if (!items.length) {
+        box.innerHTML = '<p class="muted">ไม่พบงานที่ตรงกัน ลองพิมพ์คำอื่นหรือเลือกเครื่องจักรอื่น</p>';
+        return;
+      }
+      var total = items.length;
+      var h = '<p class="muted">' + (q ? 'งานที่ใกล้เคียง ' : 'งานทั้งหมด ') + total + ' รายการ (กดเพื่อเลือก)</p>';
+      items.slice(0, 30).forEach(function (r) {
+        var j = r.x.job;
+        h += '<div class="card click" data-act="pick" data-id="' + esc(j.job_id) + '">'
+          + '<b>' + esc(j.job_name) + '</b>'
+          + (j.frequency_type === 'NONE' ? '<span class="tag">รายครั้ง</span>' : '')
+          + '<div class="muted">' + esc(j.machine) + (r.x.last_done ? ' · ทำล่าสุด ' + esc(thD(r.x.last_done)) : ' · ยังไม่เคยบันทึก') + '</div></div>';
+      });
+      if (total > 30) h += '<p class="muted">แสดง 30 รายการแรก พิมพ์เพิ่มเพื่อกรองให้แคบลง</p>';
+      box.innerHTML = h;
+    }
+    function resetSearch() {
+      var q = $('mn-q');
+      q.value = '';
+      q.disabled = !ready();
+      q.placeholder = ready() ? 'พิมพ์ชื่องาน เช่น เปลี่ยนกรอง' : 'เลือก Line และเครื่องจักรก่อน';
+      MN.id = '';
+      drawSug();
+      drawInfo();
+    }
+
+    drawMachine();
+    resetSearch();
+
+    bindClick(main, {
+      back: function () { return renderDtList(main); },
+      pick: function (t) {
+        var cur = map[t.getAttribute('data-id')];
+        if (!cur) return;
+        MN.id = cur.job.job_id;
+        $('mn-q').value = cur.job.job_name;
+        drawSug();
+        drawInfo();
+      },
+      next: function () {
+        var cur = map[MN.id];
+        if (cur) openDtForm(main, cur.job, { manual: true, ref: cur.due });
+      }
+    });
+    main.onchange = function (e) {
+      if (e.target.id === 'mn-line') {
+        MN.line = e.target.value;
+        MN.machine = '';
+        drawMachine();
+        resetSearch();
+      } else if (e.target.id === 'mn-machine') {
+        MN.machine = e.target.value;
+        resetSearch();
+      }
+    };
+    main.oninput = function (e) {
+      if (e.target.id !== 'mn-q') return;
+      MN.id = '';
+      drawInfo();
+      drawSug();
     };
   });
 }
