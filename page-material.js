@@ -169,7 +169,9 @@ function rcLoad(main) {
     RC.kg = r.kg_per_batch;
     RC.exists = !!r.record;
     RC.comment = r.record ? r.record.comment : '';
-    RC.steps = r.steps.map(function (s) { return { step: s.step, batch_no: s.batch_no ? String(s.batch_no) : '', qty_kg: s.qty_kg === '' ? '' : String(s.qty_kg) }; });
+    RC.steps = r.steps.map(function (s) {
+      return { step: s.step, batch_no: s.batch_no ? String(s.batch_no) : '', qty_kg: s.qty_kg === '' ? '' : String(s.qty_kg) };
+    });
     RC.recent = res[1];
     rcDraw(main);
   });
@@ -180,6 +182,7 @@ function rcNextNo() {
   RC.steps.forEach(function (s) { m = Math.max(m, Number(s.batch_no) || 0); });
   return m + 1;
 }
+// เลข batch ของ Cut ล่าสุดที่ยังไม่มี Mix ตามหลังในวันนี้ (ถ้าไม่มี = เว้นว่าง)
 function rcOpenBatch() {
   for (var i = RC.steps.length - 1; i >= 0; i--) {
     var s = RC.steps[i];
@@ -194,16 +197,18 @@ function rcOpenBatch() {
   return '';
 }
 function rcInfoUpdate() {
-  var nums = {}, kg = 0, names = [];
+  var names = [], cutN = 0, cutKg = 0, mixN = 0, mixKg = 0;
   RC.steps.forEach(function (s) {
     names.push(s.step);
-    if (s.batch_no) nums[s.batch_no] = 1;
-    if (s.step === 'Cut' && s.batch_no) kg += Number(s.qty_kg) || 0;
+    var q = Number(s.qty_kg) || 0;
+    if (s.step === 'Cut') { cutN++; cutKg += q; }
+    else if (s.step === 'Mix') { mixN++; mixKg += q; }
   });
   var c = $('rc-chain'), i = $('rc-info');
   if (c) c.textContent = RC.line + ': ' + (names.join(' ⇒ ') || '-');
-  if (i) i.textContent = ' · ' + Object.keys(nums).length + ' batch · ' + kg + ' kg';
+  if (i) i.textContent = ' · Cut ' + cutN + ' batch / ' + cutKg + ' kg · Mix ' + mixN + ' batch / ' + mixKg + ' kg';
 }
+function rcCell(n, kg) { return n ? n + ' batch / ' + kg + ' kg' : '-'; }
 
 function rcDraw(main) {
   var rec = canRecord('RCY');
@@ -213,19 +218,20 @@ function rcDraw(main) {
   if (!rec) h += viewNote('RCY');
   else if (RC.exists) h += '<p class="note">มีข้อมูลของวันนี้และ Line นี้แล้ว การบันทึกจะแทนที่ข้อมูลเดิม</p>';
   h += '<fieldset' + (rec ? '' : ' disabled') + '><div class="card"><div><b id="rc-chain"></b><span class="muted" id="rc-info"></span></div>';
-  h += '<p class="muted">1 batch ต้องมี Cut แล้วตามด้วย Mix · ค่าเริ่มต้น ' + RC.kg + ' kg ต่อ batch · Mix ที่ต่อจากของวันก่อนเว้นเลข batch ได้</p>';
+  h += '<p class="muted">ลง Cut อย่างเดียว Mix อย่างเดียว หรือทั้งสองอย่างก็ได้ · ค่าเริ่มต้น ' + RC.kg
+    + ' kg ต่อ batch · Mix ของที่ Cut ไว้วันก่อน ให้เว้นเลข batch ได้</p>';
   RC.steps.forEach(function (s, i) {
     h += '<div class="rs"><b>' + (i + 1) + '.</b>'
       + '<select data-k="step" data-i="' + i + '">' + optHtml(['Cut', 'Mix'], s.step) + '</select>'
-      + '<input type="number" min="1" step="1" placeholder="batch #" data-k="batch" data-i="' + i + '" value="' + esc(s.batch_no) + '">'
+      + '<input type="number" min="1" step="1" placeholder="batch # (เว้นได้)" data-k="batch" data-i="' + i + '" value="' + esc(s.batch_no) + '">'
       + '<input type="number" min="0" step="any" placeholder="kg" data-k="qty" data-i="' + i + '" value="' + esc(s.qty_kg) + '"> kg '
       + '<button type="button" class="btn sec" data-act="up" data-i="' + i + '">↑</button>'
       + '<button type="button" class="btn sec" data-act="down" data-i="' + i + '">↓</button>'
       + '<button type="button" class="btn bad" data-act="del" data-i="' + i + '">×</button></div>';
   });
-  h += '<div class="bar"><button type="button" class="btn" data-act="addbatch">+ Batch (Cut ⇒ Mix)</button>'
-    + '<button type="button" class="btn sec" data-act="addcut">+ Cut</button>'
-    + '<button type="button" class="btn sec" data-act="addmix">+ Mix</button></div>';
+  h += '<div class="bar"><button type="button" class="btn" data-act="addcut">+ Cut</button>'
+    + '<button type="button" class="btn" data-act="addmix">+ Mix</button>'
+    + '<button type="button" class="btn sec" data-act="addbatch">+ Cut และ Mix คู่กัน</button></div>';
   h += '<div class="fg"><label>Comment</label><textarea data-k="comment">' + esc(RC.comment) + '</textarea></div>';
   if (rec) h += '<button type="button" class="btn ok" data-act="save">บันทึก</button>';
   h += '</div></fieldset>';
@@ -234,10 +240,11 @@ function rcDraw(main) {
   var tr = '';
   RC.recent.forEach(function (r) {
     tr += '<tr class="click" data-act="loadrec" data-d="' + esc(r.date) + '" data-l="' + esc(r.line) + '"><td>' + esc(thD(r.date)) + '</td><td>' + esc(r.line)
-      + '</td><td>' + esc(r.chain) + '</td><td>' + r.batches + '</td><td>' + r.kg + '</td><td>' + esc(r.operator) + '</td></tr>';
+      + '</td><td>' + esc(r.chain) + '</td><td>' + esc(rcCell(r.cut_n, r.cut_kg)) + '</td><td>' + esc(rcCell(r.mix_n, r.mix_kg))
+      + '</td><td>' + esc(r.operator) + '</td></tr>';
   });
   h += RC.recent.length
-    ? '<div class="tw"><table class="tb"><thead><tr><th>วันที่</th><th>Line</th><th>ลำดับงาน</th><th>Batch</th><th>kg</th><th>ผู้บันทึก</th></tr></thead><tbody>' + tr + '</tbody></table></div>'
+    ? '<div class="tw"><table class="tb"><thead><tr><th>วันที่</th><th>Line</th><th>ลำดับงาน</th><th>Cut</th><th>Mix</th><th>ผู้บันทึก</th></tr></thead><tbody>' + tr + '</tbody></table></div>'
     : '<p class="muted">ยังไม่มีข้อมูล</p>';
   main.innerHTML = h;
   rcInfoUpdate();
@@ -247,15 +254,17 @@ function rcDraw(main) {
     up: function (t) { var i = Number(t.getAttribute('data-i')); if (i > 0) swap(i, i - 1); },
     down: function (t) { var i = Number(t.getAttribute('data-i')); if (i < RC.steps.length - 1) swap(i, i + 1); },
     del: function (t) { RC.steps.splice(Number(t.getAttribute('data-i')), 1); rcDraw(main); },
+    addcut: function () {
+      RC.steps.push({ step: 'Cut', batch_no: String(rcNextNo()), qty_kg: String(RC.kg) });
+      rcDraw(main);
+    },
+    addmix: function () {
+      RC.steps.push({ step: 'Mix', batch_no: rcOpenBatch(), qty_kg: String(RC.kg) });
+      rcDraw(main);
+    },
     addbatch: function () {
       var n = String(rcNextNo());
       RC.steps.push({ step: 'Cut', batch_no: n, qty_kg: String(RC.kg) }, { step: 'Mix', batch_no: n, qty_kg: String(RC.kg) });
-      rcDraw(main);
-    },
-    addcut: function () { RC.steps.push({ step: 'Cut', batch_no: String(rcNextNo()), qty_kg: String(RC.kg) }); rcDraw(main); },
-    addmix: function () {
-      var b = rcOpenBatch();
-      RC.steps.push({ step: 'Mix', batch_no: b, qty_kg: b ? String(RC.kg) : '' });
       rcDraw(main);
     },
     loadrec: function (t) { RC.date = t.getAttribute('data-d'); RC.line = t.getAttribute('data-l'); return rcLoad(main); },
